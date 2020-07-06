@@ -1,0 +1,955 @@
+<html>
+
+<style type="text/css">
+    #items {
+        margin-top: 1%;
+    }
+    #teapot, #easter, #kangaroo{
+        width: 32%;
+        display: inline-block;
+        border: double;
+        border-radius: 3px;
+    }
+    #light{
+        width: 97.5%;
+        border: double;
+        border-radius: 3px;
+        margin-top: 1%;
+    }
+</style>
+
+<head>
+<title>ICG WebGL &mdash; HW1</title>
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+<script type="text/javascript" src="./js/glMatrix-0.9.5.min.js"></script>
+<script type="text/javascript" src="./js/webgl-utils.js"></script>
+
+
+<script id="fragmentShader" type="fragment">#version 300 es
+    precision highp float;
+    
+    uniform highp mat4 uMVMatrix;
+    uniform highp mat4 uPMatrix;
+    uniform highp mat4 uNormalMatrix;
+    uniform highp vec3 uLightPositions[3];
+    uniform highp vec3 uLightColor;
+    
+    uniform highp int uShading;
+    uniform highp float uSmoothness;
+    uniform highp float uKa;
+    uniform highp float uKd;
+    uniform highp float uKs;
+    uniform highp float uNumCel;
+
+    in vec3 mvVertexPosition;
+    in vec3 mvVertexNormal;
+    in vec3 vertexColor;
+    flat in vec3 mvFragNormal;
+
+    out vec4 outColor;
+
+    void flatShading() {
+        vec3 sumColor = vec3(0.0);
+
+        // Ambient light
+        vec3 ambient = uLightColor * uKa * vertexColor;
+
+        for(int i = 0; i < 3; i ++){
+            vec3 V = -normalize(mvVertexPosition);
+            vec3 N = normalize(mvFragNormal);
+            vec3 L = normalize(uLightPositions[i] - mvVertexPosition);
+            vec3 H = normalize(L + V);
+
+            // Diffusion reflection
+            float cosTheta = max(dot(L, N), 0.0);
+            vec3 diffusion = uLightColor * uKd * vertexColor * cosTheta;
+
+            // Specular reflection
+            vec3 specular = vec3(0.0);
+            float cosAlpha = max(dot(H, N), 0.0);
+            if(dot(L, N) > 0.0) {
+                specular = uLightColor * uKs * pow(cosAlpha, uSmoothness);
+            }
+
+            sumColor += (diffusion + specular);
+        }
+       
+        outColor = vec4(sumColor + ambient, 1.0);
+    }
+
+    void phongShading() {
+        vec3 sumColor = vec3(0.0);
+
+        // Ambient light
+        vec3 ambient = uLightColor * uKa * vertexColor;
+
+        for(int i = 0; i < 3; i ++){
+            vec3 V = -normalize(mvVertexPosition);
+            vec3 N = normalize(mvVertexNormal);
+            vec3 L = normalize(uLightPositions[i] - mvVertexPosition);
+            vec3 H = normalize(L + V);
+
+            // Diffusion reflection
+            float cosTheta = max(dot(L, N), 0.0);
+            vec3 diffusion = uLightColor * uKd * vertexColor * cosTheta;
+
+            // Specular reflection
+            vec3 specular = vec3(0.0);
+            float cosAlpha = max(dot(H, N), 0.0);
+            if(dot(L, N) > 0.0) {
+                specular = uLightColor * uKs * pow(cosAlpha, uSmoothness);
+            }
+
+            sumColor += (diffusion + specular);
+        }
+       
+        outColor = vec4(sumColor + ambient, 1.0);
+    }
+    
+    void toonShading() {
+        bool isEdge = true;
+        vec3 sumColor = vec3(0.0);
+
+        // Ambient light
+        vec3 ambient = uLightColor * uKa * vertexColor;
+
+        for(int i = 0; i < 3; i ++){
+            vec3 V = -normalize(mvVertexPosition);
+            vec3 N = normalize(mvVertexNormal);
+            vec3 L = normalize(uLightPositions[i] - mvVertexPosition);
+            vec3 H = normalize(L + V);
+
+            // Diffusion reflection
+            float cosTheta = max(dot(L, N), 0.0);
+            vec3 diffusion = uLightColor * uKd * vertexColor * cosTheta;
+
+            // Specular reflection
+            vec3 specular = vec3(0.0);
+            float cosAlpha = max(dot(H, N), 0.0);
+            if(dot(L, N) > 0.0) {
+                specular = uLightColor * uKs * pow(cosAlpha, uSmoothness);
+            }
+
+            sumColor += (diffusion + specular);
+        }
+
+        float lightIntensity = sumColor.r + sumColor.g + sumColor.b;
+        lightIntensity = ceil(lightIntensity * uNumCel) / uNumCel;
+        outColor = vec4((sumColor + ambient) * lightIntensity, 1.0);
+    }
+
+    void main(void) {
+        if(uShading == 0)
+            flatShading();
+        else if(uShading == 1)
+            outColor = vec4(vertexColor, 1.0);
+        else if(uShading == 2)
+            phongShading();
+        else if(uShading == 3)
+            toonShading();
+    }
+</script>
+
+<script id="vertexShader" type="vertex">#version 300 es
+    in vec3 aVertexPosition;
+    in vec3 aFrontColor;
+    in vec3 aVertexNormal; 
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    uniform mat4 uNormalMatrix;
+    uniform vec3 uLightPositions[3];
+    uniform vec3 uLightColor;
+
+    uniform int uShading;
+    uniform float uSmoothness;
+    uniform float uKa;
+    uniform float uKd;
+    uniform float uKs;
+    uniform float uNumCel;
+
+    out vec3 mvVertexPosition;
+    out vec3 mvVertexNormal;
+	out vec3 vertexColor;
+
+    flat out vec3 mvFragNormal;
+
+    void gouraudShading(){
+        vec3 sumColor = vec3(0.0);
+
+        // Ambient light
+        vec3 ambient = uLightColor * uKa * aFrontColor;
+
+        for(int i = 0; i < 3; i ++){
+            vec3 V = -normalize(mvVertexPosition);
+            vec3 N = normalize(mvVertexNormal);
+            vec3 L = normalize(uLightPositions[i] - mvVertexPosition);
+            vec3 H = normalize(L + V);
+
+            
+            // Diffusion reflection
+            float cosTheta = max(dot(L, N), 0.0);
+            vec3 diffusion = uLightColor * uKd * aFrontColor * cosTheta;
+
+            // Specular reflection
+            vec3 specular = vec3(0.0);
+            float cosAlpha = max(dot(H, N), 0.0);
+            if(dot(L, N) > 0.0) {
+                specular = uLightColor * uKs * pow(cosAlpha, uSmoothness);
+            }
+            
+            sumColor += (diffusion + specular);
+        }
+        vertexColor = sumColor + ambient;
+    }
+
+    void main(void) {
+        mvVertexPosition = (uMVMatrix * vec4(aVertexPosition, 1.0)).xyz;
+        mvVertexNormal = mat3(uNormalMatrix) * aVertexNormal;
+        mvFragNormal = mvVertexNormal;
+        if(uShading == 1) {
+            gouraudShading();
+        } else {
+            vertexColor = aFrontColor;
+        }
+
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+    }
+</script>
+
+<script type="text/javascript">
+    // common variables
+    var gl;
+
+    var mvMatrix = mat4.create();
+    var pMatrix  = mat4.create();
+    var normalMatrix = mat4.create();
+
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("webgl2");
+            //gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+            gl.viewportWidth  = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } 
+        catch (e) {
+        }
+
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var shaderSource = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                shaderSource += k.textContent;
+            }
+
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } 
+        else if (shaderScript.type == "vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } 
+        else {
+            return null;
+        }
+
+        gl.shaderSource(shader, shaderSource);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+    var shaderProgram;
+
+    function initShaders() {
+        var fragmentShader = getShader(gl, "fragmentShader");
+        var vertexShader   = getShader(gl, "vertexShader");
+
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+
+        gl.useProgram(shaderProgram);
+
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+        shaderProgram.vertexFrontColorAttribute = gl.getAttribLocation(shaderProgram, "aFrontColor");
+        gl.enableVertexAttribArray(shaderProgram.vertexFrontColorAttribute);
+
+        shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+        gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+
+        shaderProgram.pMatrixUniform  = gl.getUniformLocation(shaderProgram, "uPMatrix");
+        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+        shaderProgram.normalMatrixUniform = gl.getUniformLocation(shaderProgram, "uNormalMatrix")
+        shaderProgram.smoothnessUniform = gl.getUniformLocation(shaderProgram, "uSmoothness")
+        shaderProgram.shadingUniform = gl.getUniformLocation(shaderProgram, "uShading");
+        shaderProgram.KaUniform = gl.getUniformLocation(shaderProgram, 'uKa');
+        shaderProgram.KdUniform = gl.getUniformLocation(shaderProgram, 'uKd');
+        shaderProgram.KsUniform = gl.getUniformLocation(shaderProgram, 'uKs');
+        shaderProgram.numCelUniform = gl.getUniformLocation(shaderProgram, 'uNumCel');
+        shaderProgram.lightPosition1Uniform = gl.getUniformLocation(shaderProgram, "uLightPositions[0]");
+        shaderProgram.lightPosition2Uniform = gl.getUniformLocation(shaderProgram, "uLightPositions[1]");
+        shaderProgram.lightPosition3Uniform = gl.getUniformLocation(shaderProgram, "uLightPositions[2]");
+        shaderProgram.lightColorUniform = gl.getUniformLocation(shaderProgram, "uLightColor");
+    }
+
+    function setMatrixUniforms() {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+        gl.uniformMatrix4fv(shaderProgram.normalMatrixUniform, false, normalMatrix);
+    }
+
+    var numCel = 4;
+
+    function setShadingUniforms() {
+        gl.uniform1f(shaderProgram.KaUniform, document.getElementById("Ka").value);
+        gl.uniform1f(shaderProgram.KdUniform, document.getElementById("Kd").value);
+        gl.uniform1f(shaderProgram.KsUniform, document.getElementById("Ks").value);
+        gl.uniform1f(shaderProgram.numCelUniform, numCel);
+    }
+
+    function setLightUniforms() {
+        gl.uniform3fv(shaderProgram.lightPosition1Uniform, [document.getElementById("light1X").value, document.getElementById("light1Y").value, document.getElementById("light1Z").value]);
+        gl.uniform3fv(shaderProgram.lightPosition2Uniform, [document.getElementById("light2X").value, document.getElementById("light2Y").value, document.getElementById("light2Z").value]);   
+        gl.uniform3fv(shaderProgram.lightPosition3Uniform, [document.getElementById("light3X").value, document.getElementById("light3Y").value, document.getElementById("light3Z").value]);
+        gl.uniform3fv(shaderProgram.lightColorUniform, [document.getElementById("lightColorR").value / 255.0, document.getElementById("lightColorG").value / 255.0, document.getElementById("lightColorB").value / 255.0]);
+    }
+
+    function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+
+    var teapotVertexPositionBuffer;
+    var teapotVertexNormalBuffer;
+    var teapotVertexFrontColorBuffer;
+
+    function handleLoadedTeapot(teapotData) {
+        teapotVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexPositions), gl.STATIC_DRAW);
+        teapotVertexPositionBuffer.itemSize = 3;
+        teapotVertexPositionBuffer.numItems = teapotData.vertexPositions.length / 3;
+
+        teapotVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexNormals), gl.STATIC_DRAW);
+        teapotVertexNormalBuffer.itemSize = 3;
+        teapotVertexNormalBuffer.numItems = teapotData.vertexNormals.length / 3;
+
+        teapotVertexFrontColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexFrontColorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexFrontcolors), gl.STATIC_DRAW);
+        teapotVertexFrontColorBuffer.itemSize = 3;
+        teapotVertexFrontColorBuffer.numItems = teapotData.vertexFrontcolors.length / 3;
+    }
+
+    var easterVertexPositionBuffer;
+    var easterVertexNormalBuffer;
+    var easterVertexFrontColorBuffer;
+
+    function handleLoadedEaster(easterData) {
+        easterVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, easterVertexPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(easterData.vertexPositions), gl.STATIC_DRAW);
+        easterVertexPositionBuffer.itemSize = 3;
+        easterVertexPositionBuffer.numItems = easterData.vertexPositions.length / 3;
+
+        easterVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, easterVertexNormalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(easterData.vertexNormals), gl.STATIC_DRAW);
+        easterVertexNormalBuffer.itemSize = 3;
+        easterVertexNormalBuffer.numItems = easterData.vertexNormals.length / 3;
+
+        easterVertexFrontColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, easterVertexFrontColorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(easterData.vertexFrontcolors), gl.STATIC_DRAW);
+        easterVertexFrontColorBuffer.itemSize = 3;
+        easterVertexFrontColorBuffer.numItems = easterData.vertexFrontcolors.length / 3;
+    }
+
+    var kangarooVertexPositionBuffer;
+    var kangarooVertexNormalBuffer;
+    var kangarooVertexFrontColorBuffer;
+
+    function handleLoadedKangaroo(kangarooData) {
+        kangarooVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, kangarooVertexPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(kangarooData.vertexPositions), gl.STATIC_DRAW);
+        kangarooVertexPositionBuffer.itemSize = 3;
+        kangarooVertexPositionBuffer.numItems = kangarooData.vertexPositions.length / 3;
+
+        kangarooVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, kangarooVertexNormalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(kangarooData.vertexNormals), gl.STATIC_DRAW);
+        kangarooVertexNormalBuffer.itemSize = 3;
+        kangarooVertexNormalBuffer.numItems = kangarooData.vertexNormals.length / 3;
+
+        kangarooVertexFrontColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, kangarooVertexFrontColorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(kangarooData.vertexFrontcolors), gl.STATIC_DRAW);
+        kangarooVertexFrontColorBuffer.itemSize = 3;
+        kangarooVertexFrontColorBuffer.numItems = kangarooData.vertexFrontcolors.length / 3;
+    }
+
+    function loadTeapot() {
+        var request = new XMLHttpRequest();
+        request.open("GET", "./model/Teapot.json");
+        request.onreadystatechange = function () {
+            if (request.readyState == 4) {
+                handleLoadedTeapot(JSON.parse(request.responseText));
+            }
+        }
+        request.send();
+    }
+
+    function loadEaster() {
+        var request = new XMLHttpRequest();
+        request.open("GET", "./model/Easter.json");
+        request.onreadystatechange = function () {
+            if (request.readyState == 4) {
+                handleLoadedEaster(JSON.parse(request.responseText));
+            }
+        }
+        request.send();
+    }
+
+    function loadKangaroo() {
+        var request = new XMLHttpRequest();
+        request.open("GET", "./model/Kangaroo.json");
+        request.onreadystatechange = function () {
+            if (request.readyState == 4) {
+                handleLoadedKangaroo(JSON.parse(request.responseText));
+            }
+        }
+        request.send();
+    }
+
+    var translateX;
+    var translateY;
+    var translateZ;
+    var scaleX;
+    var scaleY;
+    var scaleZ;
+    var shearXy;
+    var shearXz;
+    var shearYx;
+    var shearYz;
+    var shearZx;
+    var shearZy;
+    var rotateAxis;
+
+    function getTransformParameter(item) {
+        translateX = document.getElementById(item + "TranslateX").value;
+        translateY = document.getElementById(item + "TranslateY").value;
+        translateZ = document.getElementById(item + "TranslateZ").value;
+        scaleX = document.getElementById(item + "ScaleX").value / 10.0;
+        scaleY = document.getElementById(item + "ScaleY").value / 10.0;
+        scaleZ = document.getElementById(item + "ScaleZ").value / 10.0;
+        shearXy = document.getElementById(item + "ShearXy").value / 10.0;
+        shearXz = document.getElementById(item + "ShearXz").value / 10.0;
+        shearYx = document.getElementById(item + "ShearYx").value / 10.0;
+        shearYz = document.getElementById(item + "ShearYz").value / 10.0;
+        shearZx = document.getElementById(item + "ShearZx").value / 10.0;
+        shearZy = document.getElementById(item + "ShearZy").value / 10.0;
+        rotateAxis = document.getElementById(item + "Rotate").value;
+    }
+
+    var shading; 
+
+    function getShading(item) { 
+        shading = document.getElementById(item + "Shading").value;
+    }
+
+    var smoothness;
+
+    function getSmoothness(item) {
+        smoothness = document.getElementById(item + 'Smoothness').value;
+    }
+
+    var angle = 180;
+
+    function setMVMatrix() {
+        var shearMatrix = mat4.create();
+        mat4.identity(shearMatrix);
+        shearMatrix[4] = shearXy;
+        shearMatrix[8] = shearXz;
+        shearMatrix[1] = shearYx;
+        shearMatrix[9] = shearYz;
+        shearMatrix[2] = shearZx;
+        shearMatrix[6] = shearZy;
+
+        mat4.identity(mvMatrix);
+        mat4.translate(mvMatrix, [translateX, translateY, translateZ]);
+        mat4.multiply(mvMatrix, shearMatrix);
+        mat4.scale(mvMatrix, [scaleX, scaleY, scaleZ]);
+        if(rotateAxis == 0) {
+            mat4.rotate(mvMatrix, degToRad(angle), [1, 0, 0]);
+        } else if(rotateAxis == 1){
+            mat4.rotate(mvMatrix, degToRad(angle), [0, 1, 0]);
+        } else{
+            mat4.rotate(mvMatrix, degToRad(angle), [0, 0, 1]);
+        }
+    }
+
+    function setNormalMatrix() {
+        mat4.identity(normalMatrix);
+        mat4.multiply(normalMatrix, mvMatrix);
+        mat4.inverse(normalMatrix);
+        mat4.transpose(normalMatrix);
+    }
+    
+
+    function drawScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        if (teapotVertexPositionBuffer   == null || 
+            teapotVertexNormalBuffer     == null || 
+            teapotVertexFrontColorBuffer == null) {
+            return;
+        }
+
+        if (easterVertexPositionBuffer   == null ||
+            easterVertexNormalBuffer     == null ||
+            easterVertexFrontColorBuffer == null) {
+            return;
+        }
+
+        if (kangarooVertexPositionBuffer   == null ||
+            kangarooVertexNormalBuffer     == null ||
+            kangarooVertexFrontColorBuffer == null) {
+            return;
+        }
+
+        setShadingUniforms();
+        setLightUniforms();
+
+        // Setup Projection Matrix
+        mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+
+        // Setup Model-View Matrix
+        //mat4.identity(mvMatrix);
+        //mat4.translate(mvMatrix, [0, 0, -40]);
+        //mat4.rotate(mvMatrix, degToRad(angle), [0, 1, 0]);
+
+        // Teapot
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, 
+                               teapotVertexPositionBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexFrontColorBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexFrontColorAttribute, 
+                               teapotVertexFrontColorBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, 
+                               teapotVertexNormalBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        getTransformParameter("teapot");
+        getShading("teapot");
+        getSmoothness("teapot");
+
+        setMVMatrix();
+        setNormalMatrix();
+        setMatrixUniforms();
+
+        gl.uniform1i(shaderProgram.shadingUniform, shading);
+        gl.uniform1f(shaderProgram.smoothnessUniform, smoothness);
+        
+        gl.drawArrays(gl.TRIANGLES, 0, teapotVertexPositionBuffer.numItems);
+
+        // Easter
+        gl.bindBuffer(gl.ARRAY_BUFFER, easterVertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, 
+                               easterVertexPositionBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, easterVertexFrontColorBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexFrontColorAttribute, 
+                               easterVertexFrontColorBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, easterVertexNormalBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, 
+                               easterVertexNormalBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        getTransformParameter("easter");
+        getShading("easter");
+        getSmoothness("easter");
+
+        setMVMatrix();
+        setNormalMatrix();
+        setMatrixUniforms();
+
+        gl.uniform1i(shaderProgram.shadingUniform, shading);
+        gl.uniform1f(shaderProgram.smoothnessUniform, smoothness);
+    
+        
+        gl.drawArrays(gl.TRIANGLES, 0, easterVertexPositionBuffer.numItems);
+
+        // Kangaroo
+        gl.bindBuffer(gl.ARRAY_BUFFER, kangarooVertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, 
+                               kangarooVertexPositionBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, kangarooVertexFrontColorBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexFrontColorAttribute, 
+                               kangarooVertexFrontColorBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, kangarooVertexNormalBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, 
+                               kangarooVertexNormalBuffer.itemSize, 
+                               gl.FLOAT, false, 0, 0);
+
+        getTransformParameter("kangaroo");
+        getShading("kangaroo");
+        getSmoothness("kangaroo");
+
+        setMVMatrix();
+        setNormalMatrix();
+        setMatrixUniforms();
+
+        gl.uniform1i(shaderProgram.shadingUniform, shading);
+        gl.uniform1f(shaderProgram.smoothnessUniform, smoothness);
+
+        gl.drawArrays(gl.TRIANGLES, 0, kangarooVertexPositionBuffer.numItems);
+        
+    }
+
+    var lastTime = 0;
+
+    function animate() {
+        var timeNow = new Date().getTime();
+        if (lastTime != 0) {
+            var elapsed = timeNow - lastTime;
+            angle += 0.03 * elapsed;
+        }
+        lastTime = timeNow;
+    }
+
+    function tick() {
+        requestAnimFrame(tick);
+        drawScene();
+        animate();
+    }
+
+    function webGLStart() {
+        var canvas = document.getElementById("ICG-canvas");
+        initGL(canvas);
+        initShaders();
+        
+        loadTeapot();
+        loadEaster();
+        loadKangaroo();
+
+        gl.clearColor(0.0, 0.2, 0.2, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+
+        tick();
+    }
+</script>
+</head>
+
+<body onload="webGLStart();">
+    <canvas id="ICG-canvas" style="border: none;" width="1280" height="720"></canvas>
+    <br/>
+        <div id="container">
+            <div id="items">
+                <div id="teapot">
+                    <h3 style="text-align: center; text-decoration: underline">Teapot</h3>
+                    <table style="width: 100%;">
+                        <tr>
+                            <th>Translate X</th>
+                            <th>Translate Y</th>
+                            <th>Translate Z</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="-30" id="teapotTranslateX"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="teapotTranslateY"></td>
+                            <td><input type="range" min="-100" max="100" value="-80" id="teapotTranslateZ"></td>
+                        </tr>
+                        <tr>
+                            <th>Scale X</th>
+                            <th>Scale Y</th>
+                            <th>Scale Z</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="10" id="teapotScaleX"></td>
+                            <td><input type="range" min="-100" max="100" value="10" id="teapotScaleY"></td>
+                            <td><input type="range" min="-100" max="100" value="10" id="teapotScaleZ"></td>
+                        </tr>
+                        <tr>
+                            <th>Shear XY</th>
+                            <th>Shear YX</th>
+                            <th>Shear ZX</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="0" id="teapotShearXy"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="teapotShearYx"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="teapotShearZx"></td>
+                        </tr>
+                        <tr>
+                            <th>Shear XZ</th>
+                            <th>Shear YZ</th>
+                            <th>Shear ZY</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="0" id="teapotShearXz"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="teapotShearYz"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="teapotShearZy"></td>
+                        </tr>
+                         <tr>
+                            <th>Smoothness</th>
+                            <th>Rotate Axis</th>
+                            <th>Shading</th>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input type="range" min="1" max="30" value="15" id="teapotSmoothness">
+                            </td>
+                            <th>
+                                <select id="teapotRotate">
+                                    <option value="0">Rotate along X-axis</option>
+                                    <option value="1">Rotate along Y-axis</option>
+                                    <option value="2">Rotate along Z-axis</option>
+                                </select>
+                            </th>
+                            <th>
+                                <select id="teapotShading">
+                                    <option value="0">Flat Shading</option>
+                                    <option value="1">Gouraud Shading</option>
+                                    <option value="2">Phong Shading</option>
+                                    <option value="3">Toon Shading</option>
+                                </select>
+                            </th>
+                    </table>
+                </div>
+                <div id="easter">
+                    <h3 style="text-align: center; text-decoration: underline">Easter</h3>
+                    <table style="width: 100%;">
+                        <tr>
+                            <th>Translate X</th>
+                            <th>Translate Y</th>
+                            <th>Translate Z</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="0" id="easterTranslateX"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="easterTranslateY"></td>
+                            <td><input type="range" min="-100" max="100" value="-30" id="easterTranslateZ"></td>
+                        </tr>
+                        <tr>
+                            <th>Scale X</th>
+                            <th>Scale Y</th>
+                            <th>Scale Z</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-500" max="500" value="50" id="easterScaleX"></td>
+                            <td><input type="range" min="-500" max="500" value="50" id="easterScaleY"></td>
+                            <td><input type="range" min="-500" max="500" value="50" id="easterScaleZ"></td>
+                        </tr>
+                        <tr>
+                            <th>Shear XY</th>
+                            <th>Shear YX</th>
+                            <th>Shear ZX</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="0" id="easterShearXy"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="easterShearYx"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="easterShearZx"></td>
+                        </tr>
+                        <tr>
+                            <th>Shear XZ</th>
+                            <th>Shear YZ</th>
+                            <th>Shear ZY</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="0" id="easterShearXz"></td>
+                            <td> <input type="range" min="-100" max="100" value="0" id="easterShearYz"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="easterShearZy"></td>
+                        </tr>
+                         <tr>
+                            <th>Smoothness</th>
+                            <th>Rotate Axis</th>
+                            <th>Shading</th>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input type="range" min="1" max="30" value="15" id="easterSmoothness">
+                            </td>
+                            <th>
+                                 <select id="easterRotate">
+                                    <option value="0">Rotate along X-axis</option>
+                                    <option value="1">Rotate along Y-axis</option>
+                                    <option value="2">Rotate along Z-axis</option>
+                                </select>
+                            </th>
+                            <th>
+                                <select id="easterShading">
+                                    <option value="0">Flat Shading</option>
+                                    <option value="1">Gouraud Shading</option>
+                                    <option value="2">Phong Shading</option>
+                                    <option value="3">Toon Shading</option>
+                                </select>
+                            </th>
+                    </table>
+                </div>
+                <div id="kangaroo">
+                    <h3 style="text-align: center; text-decoration: underline">Kangaroo</h3>
+                    <table style="width: 100%;">
+                        <tr>
+                            <th>Translate X</th>
+                            <th>Translate Y</th>
+                            <th>Translate Z</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="20" id="kangarooTranslateX"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="kangarooTranslateY"></td>
+                            <td><input type="range" min="-100" max="100" value="-40" id="kangarooTranslateZ"></td>
+                        </tr>
+                        <tr>
+                            <th>Scale X</th>
+                            <th>Scale Y</th>
+                            <th>Scale Z</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-1000" max="1000" value="100" id="kangarooScaleX"></td>
+                            <td><input type="range" min="-1000" max="1000" value="100" id="kangarooScaleY"></td>
+                            <td><input type="range" min="-1000" max="1000" value="100" id="kangarooScaleZ"></td>
+                        </tr>
+                        <tr>
+                            <th>Shear XY</th>
+                            <th>Shear YX</th>
+                            <th>Shear ZX</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="0" id="kangarooShearXy"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="kangarooShearYx"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="kangarooShearZx"></td>
+                        </tr>
+                        <tr>
+                            <th>Shear XZ</th>
+                            <th>Shear YZ</th>
+                            <th>Shear ZY</th>
+                        </tr>
+                        <tr>
+                            <td><input type="range" min="-100" max="100" value="0" id="kangarooShearXz"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="kangarooShearYz"></td>
+                            <td><input type="range" min="-100" max="100" value="0" id="kangarooShearZy"></td>
+                        </tr>
+                        <tr>
+                            <th>Smoothness</th>
+                            <th>Rotate Axis</th>
+                            <th>Shading</th>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input type="range" min="1" max="30" value="15" id="kangarooSmoothness">
+                            </td>
+                            <th>
+                                <select id="kangarooRotate">
+                                    <option value="0">Rotate along X-axis</option>
+                                    <option value="1">Rotate along Y-axis</option>
+                                    <option value="2">Rotate along Z-axis</option>
+                                </select>
+                            </th>
+                            <th>
+                                <select id="kangarooShading">
+                                    <option value="0">Flat Shading</option>
+                                    <option value="1">Gouraud Shading</option>
+                                    <option value="2">Phong Shading</option>
+                                    <option value="3">Toon Shading</option>
+                                </select>
+                            </th>
+                    </table>
+                </div>
+            </div>
+            <div id="light">
+                <table style="width: 100%;">
+                    <tr>
+                        <th>Light Source 1 Position</th>
+                        <th>Light Source 2 Position</th>
+                        <th>Light Source 3 Position</th>
+                        <th>Light Source Color</th>
+                        <th>Shading Constants</th>
+                    </tr>
+                    <tr>
+                        <th>
+                            <p style="display: inline-block;">X</p>
+                            <input type="value" value="30" id="light1X" style="display: inline-block;"><br/>
+                            <p style="display: inline-block;">Y</p>
+                            <input type="value" value="20" id="light1Y" style="display: inline-block;"><br/>
+                            <p style="display: inline-block;">Z</p>
+                            <input type="value" value="-25" id="light1Z" style="display: inline-block;">
+                        </th>
+                        <th>
+                            <p style="display: inline-block;">X</p>
+                            <input type="value" value="-10" id="light2X" style="display: inline-block;"><br/>
+                            <p style="display: inline-block;">Y</p>
+                            <input type="value" value="20" id="light2Y" style="display: inline-block;"><br/>
+                            <p style="display: inline-block;">Z</p>
+                            <input type="value" value="-25" id="light2Z" style="display: inline-block;">
+                        </th>
+                        <th>
+                            <p style="display: inline-block;">X</p>
+                            <input type="value" value="0" id="light3X" style="display: inline-block;"><br/>
+                            <p style="display: inline-block;">Y</p>
+                            <input type="value" value="20" id="light3Y" style="display: inline-block;"><br/>
+                            <p style="display: inline-block;">Z</p>
+                            <input type="value" value="-25" id="light3Z" style="display: inline-block;">
+                        </th>
+                        <th>
+                            <p style="display: inline-block;">R</p>
+                            <input type="range" min="0" max="255" value="255" id="lightColorR"><br/>
+                            <p style="display: inline-block;">G</p>
+                            <input type="range" min="0" max="255" value="255" id="lightColorG"><br/>
+                            <p style="display: inline-block;">B</p>
+                            <input type="range" min="0" max="255" value="255" id="lightColorB">
+                        </th>
+                        <th>
+                            <p style="display: inline-block;">Ka</p>
+                            <input type="value" value="0.1" id="Ka"><br/>
+                            <p style="display: inline-block;">Kd</p>
+                            <input type="value" value="0.6" id="Kd"><br/>
+                            <p style="display: inline-block;">Ks</p>
+                            <input type="value" value="0.3" id="Ks">
+                        </th>
+                    </tr>
+                </table>
+            </div>
+        </div>
+</body>
+
+</html>
